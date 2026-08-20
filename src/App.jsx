@@ -12,10 +12,8 @@ const PAGE_SIZE = 5
 const COURSES = ['HTML', 'CSS', 'JavaScript', 'React', 'Node.js', 'MongoDB']
 
 export default function App() {
-  const [students, setStudents] = useState(() => {
-    const raw = localStorage.getItem('students')
-    return raw ? JSON.parse(raw) : []
-  })
+  const [students, setStudents] = useState([])
+  const [isLoadingStudents, setIsLoadingStudents] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [courseFilter, setCourseFilter] = useState('All')
   const [sortBy, setSortBy] = useState('recent')
@@ -45,8 +43,20 @@ export default function App() {
   }
 
   useEffect(() => {
-    localStorage.setItem('students', JSON.stringify(students))
-  }, [students])
+    async function loadStudents() {
+      try {
+        const response = await fetch('/api/students')
+        if (!response.ok) throw new Error('Could not load students.')
+        setStudents(await response.json())
+      } catch (error) {
+        showToast(error.message, 'error')
+      } finally {
+        setIsLoadingStudents(false)
+      }
+    }
+
+    loadStudents()
+  }, [])
 
   useEffect(() => {
     if (!toast) return undefined
@@ -135,7 +145,6 @@ export default function App() {
 
   async function submitStudent(payload) {
     setIsSubmitting(true)
-    await new Promise(resolve => setTimeout(resolve, 600))
 
     const normalized = {
       ...payload,
@@ -156,20 +165,32 @@ export default function App() {
       throw new Error('Duplicate student detected. This student already exists.')
     }
 
-    if (modalMode === 'edit' && selectedStudent) {
-      setStudents(prev => prev.map(student =>
-        student.id === selectedStudent.id
-          ? { ...student, ...normalized, id: selectedStudent.id, studentId: selectedStudent.studentId }
-          : student
-      ))
+    const isEditing = modalMode === 'edit' && selectedStudent
+    const endpoint = isEditing ? `/api/students/${selectedStudent.id}` : '/api/students'
+    let response
+    try {
+      response = await fetch(endpoint, {
+        method: isEditing ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(normalized),
+      })
+    } catch (error) {
+      setIsSubmitting(false)
+      throw new Error('Could not connect to the student API.')
+    }
+
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}))
+      setIsSubmitting(false)
+      throw new Error(result.error || 'Could not save student.')
+    }
+
+    const savedStudent = await response.json()
+    if (isEditing) {
+      setStudents(prev => prev.map(student => student.id === savedStudent.id ? savedStudent : student))
       showToast('Student updated successfully.')
     } else {
-      const newStudent = {
-        ...normalized,
-        id: Date.now().toString(),
-        studentId: generateStudentId(),
-      }
-      setStudents(prev => [newStudent, ...prev])
+      setStudents(prev => [savedStudent, ...prev])
       showToast('Student added successfully.')
     }
 
@@ -178,15 +199,40 @@ export default function App() {
     closeModal()
   }
 
-  function deleteStudent(id) {
+  async function deleteStudent(id) {
     const student = students.find(item => item.id === id)
     if (!student) return
 
     const confirmed = window.confirm(`Delete ${student.name}? This action cannot be undone.`)
     if (!confirmed) return
 
-    setStudents(prev => prev.filter(item => item.id !== id))
-    showToast('Student deleted successfully.')
+    try {
+      const response = await fetch(`/api/students/${id}`, { method: 'DELETE' })
+      if (!response.ok) throw new Error('Could not delete student.')
+      setStudents(prev => prev.filter(item => item.id !== id))
+      showToast('Student deleted successfully.')
+    } catch (error) {
+      showToast(error.message, 'error')
+    }
+  }
+
+  async function toggleStudentStatus(id) {
+    const student = students.find(item => item.id === id)
+    if (!student) return
+
+    try {
+      const response = await fetch(`/api/students/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: student.status === 'Active' ? 'Inactive' : 'Active' }),
+      })
+      if (!response.ok) throw new Error('Could not update student status.')
+      const updatedStudent = await response.json()
+      setStudents(prev => prev.map(item => item.id === id ? updatedStudent : item))
+      showToast('Student status updated.')
+    } catch (error) {
+      showToast(error.message, 'error')
+    }
   }
 
   function handleModalKeyDown(event) {
@@ -268,7 +314,9 @@ export default function App() {
             </div>
           </div>
 
-          {filteredStudents.length === 0 ? (
+          {isLoadingStudents ? (
+            <div className="empty-state"><p>Loading students...</p></div>
+          ) : filteredStudents.length === 0 ? (
             <div className="empty-state">
               <div className="empty-icon">📚</div>
               <h3>No students found</h3>
@@ -281,14 +329,7 @@ export default function App() {
                 onView={openViewModal}
                 onEdit={openEditModal}
                 onDelete={deleteStudent}
-                onToggleStatus={(id) => {
-                  setStudents(prev => prev.map(student =>
-                    student.id === id
-                      ? { ...student, status: student.status === 'Active' ? 'Inactive' : 'Active' }
-                      : student
-                  ))
-                  showToast('Student status updated.')
-                }}
+                onToggleStatus={toggleStudentStatus}
               />
 
               <div className="pagination">
