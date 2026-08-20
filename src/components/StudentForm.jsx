@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react'
 import Button from './Button'
 import Input from './Input'
 import React from 'react'
-const EMPTY_FORM = { name: '', age: '', course: '' }
+const EMPTY_FORM = { name: '', age: '', course: '', status: 'Active' }
 
-export default function StudentForm({ mode, initialData, onSubmit, onCancel, isLoading, existingStudents }) {
+export default function StudentForm({ mode, initialData, onSubmit, onCancel, isLoading, existingStudents, courses = [] }) {
   const getDefault = data => ({
     name: data?.name ?? '',
     age: data?.age ?? '',
     course: data?.course ?? '',
+    status: data?.status ?? 'Active',
   })
 
   const [formData, setFormData] = useState(getDefault(initialData))
@@ -17,7 +18,7 @@ export default function StudentForm({ mode, initialData, onSubmit, onCancel, isL
   useEffect(() => {
     setFormData(getDefault(initialData))
     setFormError('')
-  }, [initialData, mode])
+  }, [initialData, mode, courses])
 
   const isDirty = JSON.stringify(formData) !== JSON.stringify(getDefault(initialData))
 
@@ -34,7 +35,6 @@ export default function StudentForm({ mode, initialData, onSubmit, onCancel, isL
   }
 
   function handleReset() {
-    if (!confirmClose()) return
     setFormData(getDefault(initialData))
     setFormError('')
   }
@@ -46,6 +46,7 @@ export default function StudentForm({ mode, initialData, onSubmit, onCancel, isL
       name: formData.name.trim(),
       course: formData.course.trim(),
       age: formData.age,
+      status: formData.status,
     }
 
     if (!payload.name || !payload.course || !payload.age) {
@@ -82,7 +83,7 @@ export default function StudentForm({ mode, initialData, onSubmit, onCancel, isL
       if (confirmClose()) onCancel()
     }
 
-    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
+    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'SELECT') {
       e.preventDefault()
       e.currentTarget.requestSubmit()
     }
@@ -116,13 +117,40 @@ export default function StudentForm({ mode, initialData, onSubmit, onCancel, isL
         error={Boolean(formError)}
       />
 
-      <Input
-        label="Course"
-        value={formData.course}
-        onChange={e => handleChange('course', e.target.value)}
-        placeholder="Course"
-        error={Boolean(formError)}
-      />
+      {courses.length > 0 ? (
+        <div className="form-group">
+          <label>Course</label>
+          <select
+            value={formData.course}
+            onChange={e => handleChange('course', e.target.value)}
+            className={Boolean(formError) ? 'error' : ''}
+          >
+            <option value="" disabled>Select a course</option>
+            {courses.map(course => (
+              <option key={course} value={course}>{course}</option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <Input
+          label="Course"
+          value={formData.course}
+          onChange={e => handleChange('course', e.target.value)}
+          placeholder="Course"
+          error={Boolean(formError)}
+        />
+      )}
+
+      <div className="form-group">
+        <label>Status</label>
+        <select
+          value={formData.status}
+          onChange={e => handleChange('status', e.target.value)}
+        >
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+        </select>
+      </div>
 
       {formError && <div className="form-error">{formError}</div>}
 
